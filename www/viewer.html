@@ -10,7 +10,7 @@
     <meta http-equiv="expires" content="Tue, 01 Jan 1980 1:00:00 GMT" />
     <meta http-equiv="pragma" content="no-cache" />
     <!-- Third Party package -->
-    <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
     <!-- Autodesk Forge Viewer files (IMPORTANT) -->
     <link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.min.css" type="text/css">
     <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
@@ -29,7 +29,13 @@
     <!-- Custom script -->
     <script>
         var viewer;
-        var options = {
+        const isSVF2 = getUrlParameter('isSVF2');
+        var options = isSVF2?{
+            env: 'MD20ProdUS', // TODO: for models uploaded to EMEA change this option to 'MD20ProdEU'
+            api: 'D3S', 
+            getAccessToken: getForgeToken
+        }:
+        {
             env: 'AutodeskProduction',
             api: 'derivativeV2', // TODO: for models uploaded to EMEA change this option to 'derivativeV2_EU'
             getAccessToken: getForgeToken
