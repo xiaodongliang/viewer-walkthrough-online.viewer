@@ -41,7 +41,7 @@
         <h1>Upload a supported file to bucket</h1>
         <form id="upload" action="/api/forge/datamanagement/bucket/upload" enctype="multipart/form-data" method="post">
             <input type="file" name="fileToUpload"/>
-            <button type="submit">Submit</button>
+            <button id="submit" type="submit">Submit</button>
         </form>
         <p></p>
         <input type="checkbox" id="isSVF2"> Translate SVF2?
@@ -52,7 +52,7 @@
 </body>
 
 <script>
-    $('#upload').on('submit', function() {
+    $('#submit').on('click', function() {
         const isSVF2 = $('#isSVF2').is(':checked');
         const formAction = $('#upload').attr('action');
         $('#upload').attr('action', formAction + '/' + isSVF2);

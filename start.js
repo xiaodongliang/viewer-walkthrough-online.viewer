@@ -23,17 +23,18 @@
 var express = require('express');           // For web server
 var Axios = require('axios');               // A Promised base http client
 var bodyParser = require('body-parser');    // Receive JSON format
-
 // Set up Express web server
 var app = express();
 app.use(bodyParser.json());
 app.use(express.static(__dirname + '/www'));
-
+  
 // This is for web server to start listening to port 3000
 app.set('port', 3000);
 var server = app.listen(app.get('port'), function () {
     console.log('Server listening on port ' + server.address().port);
 });
+
+server.timeout = 15*60*1000;
 
 //-------------------------------------------------------------------
 // Configuration for your Forge account
@@ -47,7 +48,7 @@ var scopes = 'data:read data:write data:create bucket:create bucket:read';
 const querystring = require('querystring');
 
 const maxFileSize = 200 * 1024 * 1024; // 200M
-const chunkSize = 20 * 1024 * 1024;// 20M
+const chunkSize = 50 * 1024 * 1024;// 50M
 Axios.defaults.maxContentLength = maxFileSize;
 Axios.defaults.maxBodyLength = maxFileSize;
 
@@ -137,10 +138,10 @@ app.get('/api/forge/datamanagement/bucket/create', function (req, res) {
             if (error.response && error.response.status == 409) {
                 console.log('Bucket already exists, skip creation.');
                 res.redirect('/api/forge/datamanagement/bucket/detail');
-            }else{
-            // Failed
-            console.log(error);
-            res.send('Failed to create a new bucket');
+            } else {
+                // Failed
+                console.log(error);
+                res.send('Failed to create a new bucket');
             }
         });
 });
@@ -174,97 +175,96 @@ String.prototype.toBase64 = function () {
     return new Buffer(this).toString('base64');
 };
 
-function chunkUpload(access_token,originalname,length,sessionId,range,readStream){
-    return new Promise(function(resolve,reject) { 
+function chunkUpload(access_token, originalname, length, sessionId, range, readStream) {
+    return new Promise(function (resolve, reject) {
         Axios({
             method: 'PUT',
-            url: 'https://developer.api.autodesk.com/oss/v2/buckets/' + encodeURIComponent(bucketKey) + '/objects/' + encodeURIComponent(originalname)+'/resumable',
+            url: 'https://developer.api.autodesk.com/oss/v2/buckets/' + encodeURIComponent(bucketKey) + '/objects/' + encodeURIComponent(originalname) + '/resumable',
             headers: {
                 Authorization: 'Bearer ' + access_token,
                 'Content-Disposition': originalname,
                 'Content-Length': length,
-                'Session-Id':sessionId,
-                'Content-Range':range
+                'Session-Id': sessionId,
+                'Content-Range': range
             },
             data: readStream
         })
-        .then(function (response) {
-            // Success
-            console.log('Succeeded to upload one chunk...');  
-            resolve(response);
-        })
-        .catch(function (error) {
-            // Failed
-            console.log('Failed to upload one chunk...'); 
-            resolve(error);
-        });  
+            .then(function (response) {
+                // Success
+                console.log('Succeeded to upload one chunk...');
+                resolve(response);
+            })
+            .catch(function (error) {
+                // Failed
+                console.log('Failed to upload one chunk...');
+                resolve(error);
+            });
     })
 }
 
 function delay(t, v) {
-    return new Promise(function(resolve) {
-      setTimeout(resolve.bind(null, v), t);
+    return new Promise(function (resolve) {
+        setTimeout(resolve.bind(null, v), t);
     });
-  }
+}
 
 
 var multer = require('multer');         // To handle file upload
 var upload = multer({ dest: 'tmp/' }); // Save file into local /tmp folder
 
 // Route /api/forge/datamanagement/bucket/upload
-app.post('/api/forge/datamanagement/bucket/upload/:isSVF2', upload.single('fileToUpload'), function (req, res) {
+app.post('/api/forge/datamanagement/bucket/upload/:isSVF2', upload.single('fileToUpload'), async function (req, res) {
     var fs = require('fs'); // Node.js File system for reading files
-    
+
     const isSVF2 = req.params.isSVF2;
-    //normally, get file header info firstly. To make simpler based on original skeleton
-    //keep readFile stream firstly.
-    fs.readFile(req.file.path, async function (err, filecontent) {
 
-        const fileSize = filecontent.length;
-        if (fileSize > maxFileSize) {
-            //resumable upload
-            const nbChunks = Math.ceil(fileSize / chunkSize); 
-            const sessionId = parseInt(Math.random() * 1000, 20);
-            console.log(`total chunks: ${nbChunks}` );
+    const fileSize = fs.statSync(req.file.path).size;
 
-            var chunkIdx = 0;  
-            //normally, to have better performance, async process to build the uploading map
-            //and also consider 429 （too many requests in one minute)
-            //to make a simpler code, use while loop
-            //and also keep original skeleton to respond client after uploading is done
-            //(normally, the best design is client polls status, or use socket to notify client)
-            
-            var chunckUploadRes = null;
-            while(chunkIdx<nbChunks){
+    if (fileSize > maxFileSize) {
+        //resumable upload
+        const nbChunks = Math.ceil(fileSize / chunkSize);
+        const sessionId = parseInt(Math.random() * 1000, 20);
+        console.log(`total chunks: ${nbChunks}`);
 
-                const start = chunkIdx * chunkSize
-                const end = Math.min(fileSize, (chunkIdx + 1) * chunkSize) - 1
-                const range = "bytes " + start + "-" + end + "/" + fileSize;
-                const length = end - start + 1;
-                const readStream =fs.createReadStream(req.file.path, {
-                  start, end
-                })
-                console.log(`uploading chunk ${chunkIdx} : ${start} - ${end}` ); 
+        var chunkIdx = 0;
+        //normally, to have better performance, async process to build the uploading map
+        //and also consider 429 （too many requests in one minute)
+        //to make a simpler code, use while loop
+        //and also keep original skeleton to respond client after uploading is done
+        //(normally, the best design is client polls status, or use socket to notify client)
 
-                chunckUploadRes = await chunkUpload(access_token,req.file.originalname,length,sessionId,range,readStream);
-                //avoid error 429
-                await delay(1000);
-                chunkIdx++;
-            }
-            
-            //now check if all chunks are uploaded
-            if(chunkIdx == nbChunks){
-                // Success 
-                //all chunks are uploaded. only the last response will tell the urn
-                var urn = chunckUploadRes.data.objectId.toBase64();
-                res.redirect('/api/forge/modelderivative/' + urn +'/'+ isSVF2);
-            }else{
-                // Failed
-                console.log(error);
-                res.send('Failed to create a new object in the bucket');
-            } 
+        var chunckUploadRes = null;
+        while (chunkIdx < nbChunks) {
+
+            const start = chunkIdx * chunkSize
+            const end = Math.min(fileSize, (chunkIdx + 1) * chunkSize) - 1
+            const range = "bytes " + start + "-" + end + "/" + fileSize;
+            const length = end - start + 1;
+            const readStream = fs.createReadStream(req.file.path, {
+                start, end
+            })
+            console.log(`uploading chunk ${chunkIdx} : ${start} - ${end}`);
+
+            chunckUploadRes = await chunkUpload(access_token, req.file.originalname, length, sessionId, range, readStream);
+            //avoid error 429
+            await delay(500);
+            chunkIdx++;
+        }
+
+        //now check if all chunks are uploaded
+        if (chunkIdx == nbChunks) {
+            // Success 
+            //all chunks are uploaded. only the last response will tell the urn
+            var urn = chunckUploadRes.data.objectId.toBase64();
+            res.redirect('/api/forge/modelderivative/' + urn + '/' + isSVF2);
         } else {
-            //single upload
+            // Failed
+            console.log(error);
+            res.send('Failed to create a new object in the bucket');
+        }
+    } else {
+        //single upload
+        fs.readFile(req.file.path, async function (err, filecontent) {
 
             Axios({
                 method: 'PUT',
@@ -280,15 +280,15 @@ app.post('/api/forge/datamanagement/bucket/upload/:isSVF2', upload.single('fileT
                     // Success
                     console.log(response);
                     var urn = response.data.objectId.toBase64();
-                    res.redirect('/api/forge/modelderivative/' + urn+'/0');
+                    res.redirect('/api/forge/modelderivative/' + urn + '/0');
                 })
                 .catch(function (error) {
                     // Failed
                     console.log(error);
                     res.send('Failed to create a new object in the bucket');
                 });
-        }
-    });
+        })
+    } 
 });
 
 // Route /api/forge/modelderivative
@@ -296,14 +296,14 @@ app.get('/api/forge/modelderivative/:urn/:isSVF2', function (req, res) {
     var urn = req.params.urn;
     var isSVF2 = req.params.isSVF2;
 
-    var format_type = isSVF2?'svf2':'svf';
+    var format_type = isSVF2 ? 'svf2' : 'svf';
     var format_views = ['2d', '3d'];
     Axios({
         method: 'POST',
         url: 'https://developer.api.autodesk.com/modelderivative/v2/designdata/job',
         headers: {
             'content-type': 'application/json',
-            Authorization: 'Bearer ' + access_token 
+            Authorization: 'Bearer ' + access_token
         },
         data: JSON.stringify({
             'input': {
@@ -322,7 +322,7 @@ app.get('/api/forge/modelderivative/:urn/:isSVF2', function (req, res) {
         .then(function (response) {
             // Success
             console.log(response);
-            res.redirect('/viewer.html?urn=' + urn +'&isSVF2='+isSVF2);
+            res.redirect('/viewer.html?urn=' + urn + '&isSVF2=' + isSVF2);
         })
         .catch(function (error) {
             // Failed
