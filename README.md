@@ -1,3 +1,10 @@
+```diff
+- This is forked from https://github.com/Autodesk-Forge/viewer-walkthrough-online.viewer.
+- The updates add codes with resumable uploading for large model, keeping the same skeleton of the tutorial. No fix size on what means large model. Generally, by common experience. e.g. in the update codes, it is set to 200M. if bigger than 200M, resumable uploading with chunk =20M. 
+- The skeleton of the tutorial connects uploading and translating directly and notifies the client when translating is started. To keep the same skeleton, the update code intentionally set response timeout to 15 minutes (assume the uploading can be done within 15 minutes). In real practise, when uploading is started, the code must responds client. and use socket or polling status to check uploading status. When it is done, trigger translation.
+- some codes are also added to enable the option to allow the user to switch to SVF2.
+``` 
+
 # Online Viewer sample
 
 [![Node.js](https://img.shields.io/badge/Node.js-8.11.1-blue.svg)](https://nodejs.org/)
